@@ -14,6 +14,8 @@ from telegram.ext import (
 )
 from telegram import InputMediaPhoto
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -142,10 +144,10 @@ def get_contact_reply_keyboard():
 def get_works_media(page):
     page = max(0, min(page, WORKS_COUNT - 1))
     photo_num = page + 1
-    path = f"works/photo{photo_num}.jpg"
+    path = os.path.join(BASE_DIR, "works", f"photo{photo_num}.jpg")
     if not os.path.exists(path):
-        path_png = f"works/photo{photo_num}.png"
-        path = path_png if os.path.exists(path_png) else "works/placeholder.jpg"
+        path_png = os.path.join(BASE_DIR, "works", f"photo{photo_num}.png")
+        path = path_png if os.path.exists(path_png) else os.path.join(BASE_DIR, "works", "placeholder.jpg")
     captions = [
         "✨ <b>Мои работы</b> – Стильная стрижка",
         "Прическа на выпускной",
