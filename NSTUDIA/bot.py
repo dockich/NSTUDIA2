@@ -1,7 +1,6 @@
 import os
 import sqlite3
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application,
@@ -14,7 +13,7 @@ from telegram.ext import (
 )
 from telegram import InputMediaPhoto
 
-load_dotenv()
+
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
