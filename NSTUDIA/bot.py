@@ -245,7 +245,7 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return ConversationHandler.END
     elif text == "💰 Прайс-лист":
-        msg = "📋 <b>Прайс-лист:</b>\n\n💇‍♀️ Прическа — от 2000₽\n💄 Макияж — от 2500₽\n✂️ Женская стрижка — от 500₽\n💁‍♀️ Наращивание волос — от 5000₽\n📋 Консультация — бесплатно"
+        msg = "📋 <b>Прайс-лист:</b>\n\n💇‍♀️ Прическа — от 2000₽\n💄 Макияж — от 2500₽\n✂️ Женская стрижка — от 500₽\n💁‍♀️ Наращивание волос — от 5000₽\н📋 Консультация — бесплатно"
         await update.message.reply_text(msg, parse_mode="HTML")
         await show_main_menu(update.effective_chat.id, context, user_id)
         return ConversationHandler.END
@@ -286,6 +286,7 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await show_main_menu(update.effective_chat.id, context, user_id, "Пожалуйста, используйте кнопки меню:")
         return ConversationHandler.END
+
 
 # ==================== ДИАЛОГ ЗАПИСИ ====================
 async def service_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
