@@ -1,49 +1,40 @@
 import os
 import sqlite3
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters,
-    ConversationHandler,
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters, ConversationHandler
 )
-from telegram import InputMediaPhoto
 
-
-
+# ==================== КОНФИГУРАЦИЯ ====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 WORKS_COUNT = 10
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))   # абсолютный путь к папке с ботом
 
+# Состояния для диалогов
 SERVICE, NAME, CONTACT, DATE, TIME = range(5)
 CHOOSING_CANCEL_BOOKING = 10
 CHOOSING_SLOT_DATE = 11
 CHOOSING_SLOT_TIME = 12
 
-
-
-
-
+# ==================== БАЗА ДАННЫХ ====================
 def init_db():
-    conn = sqlite3.connect("barbershop.db")
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "barbershop.db"))
     cursor = conn.cursor()
     cursor.execute("""
-                   CREATE TABLE IF NOT EXISTS clients
-                   (
-                       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                       telegram_id INTEGER NOT NULL,
-                       name        TEXT    NOT NULL,
-                       phone       TEXT    NOT NULL,
-                       service     TEXT    NOT NULL,
-                       date        TEXT    NOT NULL,
-                       time        TEXT    NOT NULL,
-                       created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                   )
-                   """)
+        CREATE TABLE IF NOT EXISTS clients (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            name        TEXT NOT NULL,
+            phone       TEXT NOT NULL,
+            service     TEXT NOT NULL,
+            date        TEXT NOT NULL,
+            time        TEXT NOT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     cursor.execute("PRAGMA table_info(clients)")
     columns = [col[1] for col in cursor.fetchall()]
     if 'telegram_id' not in columns:
@@ -51,12 +42,8 @@ def init_db():
     conn.commit()
     conn.close()
 
-
-
-
-
+# ==================== КЛАВИАТУРЫ ====================
 def get_start_reply_keyboard(user_id):
-    """Главное меню – для администратора добавляется кнопка списка записей."""
     keyboard = [
         ["📝 Записаться"],
         ["💼 Мои работы"],
@@ -66,23 +53,6 @@ def get_start_reply_keyboard(user_id):
     if str(user_id) == ADMIN_ID:
         keyboard.append(["📋 Список записей"])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-
-
-
-
-
-async def show_main_menu(chat_id, context, user_id, text=None):
-    if text is None:
-        text = "✨ Добро пожаловать в NSTUDIA! ✨\n\nВыберите действие:"
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        reply_markup=get_start_reply_keyboard(user_id)
-    )
-
-
-
-
 
 def get_inline_service_keyboard():
     keyboard = [
@@ -95,10 +65,6 @@ def get_inline_service_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-
-
-
-
 def get_inline_date_keyboard():
     keyboard = []
     today = datetime.now()
@@ -109,10 +75,6 @@ def get_inline_date_keyboard():
         keyboard.append([InlineKeyboardButton(date_str, callback_data=callback)])
     keyboard.append([InlineKeyboardButton("🔙 Отмена", callback_data="cancel_booking_menu")])
     return InlineKeyboardMarkup(keyboard)
-
-
-
-
 
 def get_inline_time_keyboard(booked_times=None):
     if booked_times is None:
@@ -127,71 +89,66 @@ def get_inline_time_keyboard(booked_times=None):
     slots.append([InlineKeyboardButton("🔙 Отмена", callback_data="cancel_booking_menu")])
     return InlineKeyboardMarkup(slots)
 
-
 def get_contact_reply_keyboard():
     return ReplyKeyboardMarkup(
         [[KeyboardButton("📱 Поделиться номером телефона", request_contact=True)]],
         resize_keyboard=True, one_time_keyboard=True
     )
 
-
-
-
-
+# ==================== РАБОТА С ФОТО (МОИ РАБОТЫ) ====================
 def get_works_media(page):
+    """Возвращает InputMediaPhoto или None, если файл не найден."""
     page = max(0, min(page, WORKS_COUNT - 1))
     photo_num = page + 1
-    path = f"works/photo{photo_num}.jpg"
+    works_dir = os.path.join(BASE_DIR, "works")
+    path = os.path.join(works_dir, f"photo{photo_num}.jpg")
     if not os.path.exists(path):
-        path_png = f"works/photo{photo_num}.png"
-        if os.path.exists(path_png):
-            path = path_png
-        else:
-            # Если нет ни jpg, ни png — возвращаем None, а не падаем
+        path_png = os.path.join(works_dir, f"photo{photo_num}.png")
+        if not os.path.exists(path_png):
             return None
+        path = path_png
+
     captions = [
         "✨ <b>Мои работы</b> – Стильная стрижка",
         "Прическа на выпускной",
         "Вечерний макияж",
         "Наращивание волос",
         "Креативное окрашивание",
-        "",
-        "",
+        "Свадебный образ",
+        "Мужская стрижка",
         "Детская стрижка",
         "Укладка на длинные волосы",
-        "",
+        "Биозавивка",
     ]
     caption = captions[page] if page < len(captions) else f"Работа #{photo_num}"
     return InputMediaPhoto(open(path, "rb"), caption=caption, parse_mode="HTML")
-
-
-
-
-
 
 def get_inline_work_pages_keyboard(page):
     keyboard = [
         [
             InlineKeyboardButton("⬅️", callback_data=f"works_prev_{page}"),
-            InlineKeyboardButton(f"{page + 1}/{WORKS_COUNT}", callback_data="works_page"),
+            InlineKeyboardButton(f"{page+1}/{WORKS_COUNT}", callback_data="works_page"),
             InlineKeyboardButton("➡️", callback_data=f"works_next_{page}"),
         ],
         [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
+async def show_main_menu(chat_id, context, user_id, text=None):
+    if text is None:
+        text = "✨ Добро пожаловать в NSTUDIA! ✨\n\nВыберите действие:"
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=get_start_reply_keyboard(user_id)
+    )
 
-
-
-
+# ==================== ОБРАБОТЧИКИ КНОПОК ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await show_main_menu(update.effective_chat.id, context, user_id)
     return ConversationHandler.END
-
-
-
-
 
 async def cancel_booking_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -203,10 +160,6 @@ async def cancel_booking_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.clear()
     return ConversationHandler.END
 
-
-
-
-
 async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -214,10 +167,6 @@ async def back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await show_main_menu(update.effective_chat.id, context, user_id)
     return ConversationHandler.END
-
-
-
-
 
 async def works_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -234,27 +183,28 @@ async def works_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         return
     media = get_works_media(page)
-    await query.edit_message_media(media=media, reply_markup=get_inline_work_pages_keyboard(page))
-
-
-
-
+    if media:
+        await query.edit_message_media(media=media, reply_markup=get_inline_work_pages_keyboard(page))
+    else:
+        await query.edit_message_text(
+            "Фото не найдено. Убедитесь, что в папке `works` есть photo1.jpg ... photo10.jpg",
+            reply_markup=get_inline_work_pages_keyboard(page)
+        )
 
 async def get_bookings_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправляет администратору список всех будущих записей."""
     user_id = update.effective_user.id
     if str(user_id) != ADMIN_ID:
         await update.message.reply_text("Доступ запрещён.")
         return
-    conn = sqlite3.connect("barbershop.db")
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "barbershop.db"))
     cursor = conn.cursor()
     today = datetime.now().strftime("%Y-%m-%d")
     cursor.execute("""
-                   SELECT name, phone, service, date, time, telegram_id
-                   FROM clients
-                   WHERE date >= ?
-                   ORDER BY date, time
-                   """, (today,))
+        SELECT name, phone, service, date, time, telegram_id
+        FROM clients
+        WHERE date >= ?
+        ORDER BY date, time
+    """, (today,))
     bookings = cursor.fetchall()
     conn.close()
     if not bookings:
@@ -273,10 +223,6 @@ async def get_bookings_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"👤 {name}\n📞 {phone}\n💇 {service_display}\n📅 {date} {time}\n<a href=\"tg://user?id={tg_id}\">✉️ Написать</a>\n\n"
     await update.message.reply_text(message, parse_mode="HTML")
 
-
-
-
-
 async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
@@ -284,17 +230,20 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Выберите услугу:", reply_markup=get_inline_service_keyboard())
         return SERVICE
     elif text == "💼 Мои работы":
-    media = get_works_media(0)
-    if media is None:
-        await update.message.reply_text("❌ Фотографии временно недоступны. Попробуйте позже.")
-    else:
-        await update.message.reply_photo(
-            photo=media.media,
-            caption=media.caption,
-            parse_mode="HTML",
-            reply_markup=get_inline_work_pages_keyboard(0)
-        )
-    return ConversationHandler.END
+        media = get_works_media(0)
+        if media:
+            await update.message.reply_photo(
+                photo=media.media,
+                caption=media.caption,
+                parse_mode="HTML",
+                reply_markup=get_inline_work_pages_keyboard(0)
+            )
+        else:
+            await update.message.reply_text(
+                "📁 Фотографии временно недоступны.\n"
+                "Пожалуйста, загрузите фото в папку `works` на сервере."
+            )
+        return ConversationHandler.END
     elif text == "💰 Прайс-лист":
         msg = "📋 <b>Прайс-лист:</b>\n\n💇‍♀️ Прическа — от 2000₽\n💄 Макияж — от 2500₽\n✂️ Женская стрижка — от 500₽\n💁‍♀️ Наращивание волос — от 5000₽\n📋 Консультация — бесплатно"
         await update.message.reply_text(msg, parse_mode="HTML")
@@ -315,10 +264,9 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📅 Выберите дату:", reply_markup=get_inline_date_keyboard())
         return CHOOSING_SLOT_DATE
     elif text == "❌ Отменить запись":
-        conn = sqlite3.connect("barbershop.db")
+        conn = sqlite3.connect(os.path.join(BASE_DIR, "barbershop.db"))
         cursor = conn.cursor()
-        cursor.execute("SELECT id, service, date, time FROM clients WHERE telegram_id = ? ORDER BY date, time",
-                       (user_id,))
+        cursor.execute("SELECT id, service, date, time FROM clients WHERE telegram_id = ? ORDER BY date, time", (user_id,))
         bookings = cursor.fetchall()
         conn.close()
         if not bookings:
@@ -339,10 +287,7 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_main_menu(update.effective_chat.id, context, user_id, "Пожалуйста, используйте кнопки меню:")
         return ConversationHandler.END
 
-
-
-
-
+# ==================== ДИАЛОГ ЗАПИСИ ====================
 async def service_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -355,14 +300,8 @@ async def service_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "consultation": "Консультация"
     }
     context.user_data["service"] = service
-    await query.edit_message_text(
-        f"✅ Выбрана услуга: {service_names[service]}\n\n✍️ Введите ваше имя:"
-    )
+    await query.edit_message_text(f"✅ Выбрана услуга: {service_names[service]}\n\n✍️ Введите ваше имя:")
     return NAME
-
-
-
-
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["name"] = update.message.text
@@ -371,10 +310,6 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_contact_reply_keyboard()
     )
     return CONTACT
-
-
-
-
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contact = update.message.contact
@@ -392,16 +327,12 @@ async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return CONTACT
 
-
-
-
-
 async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     date_str = query.data.split("_")[1]
     context.user_data["date"] = date_str
-    conn = sqlite3.connect("barbershop.db")
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "barbershop.db"))
     cursor = conn.cursor()
     cursor.execute("SELECT time FROM clients WHERE date = ?", (date_str,))
     booked = [row[0] for row in cursor.fetchall()]
@@ -411,10 +342,6 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_inline_time_keyboard(booked)
     )
     return TIME
-
-
-
-
 
 async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -435,7 +362,7 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     service_display = service_names.get(service, service)
 
-    conn = sqlite3.connect("barbershop.db")
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "barbershop.db"))
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO clients (telegram_id, name, phone, service, date, time) VALUES (?, ?, ?, ?, ?, ?)",
@@ -465,25 +392,19 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     return ConversationHandler.END
 
-
-
-
+# ==================== СВОБОДНЫЕ СЛОТЫ ====================
 async def slot_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     selected_date = query.data.split("_")[1]
     context.user_data["slot_date"] = selected_date
-    conn = sqlite3.connect("barbershop.db")
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "barbershop.db"))
     cursor = conn.cursor()
     cursor.execute("SELECT time FROM clients WHERE date = ?", (selected_date,))
     booked = [row[0] for row in cursor.fetchall()]
     conn.close()
     await query.edit_message_text(f"📅 {selected_date}\nСвободное время:", reply_markup=get_inline_time_keyboard(booked))
     return CHOOSING_SLOT_TIME
-
-
-
-
 
 async def slot_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -498,15 +419,12 @@ async def slot_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update.effective_chat.id, context, user_id)
     return ConversationHandler.END
 
-
-
-
-
+# ==================== ОТМЕНА ЗАПИСИ ====================
 async def confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     booking_id = int(query.data.split("_")[-1])
-    conn = sqlite3.connect("barbershop.db")
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "barbershop.db"))
     cursor = conn.cursor()
     cursor.execute("DELETE FROM clients WHERE id = ?", (booking_id,))
     conn.commit()
@@ -516,40 +434,32 @@ async def confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_main_menu(update.effective_chat.id, context, user_id, "Запись удалена.")
     return ConversationHandler.END
 
-
-
-
-
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await show_main_menu(update.effective_chat.id, context, user_id, "Диалог отменён.")
     context.user_data.clear()
     return ConversationHandler.END
 
-
-
-
-
+# ==================== ЗАПУСК ====================
 def main():
     init_db()
     if not BOT_TOKEN:
-        print("❌ Ошибка: BOT_TOKEN не найден")
+        print("❌ Ошибка: BOT_TOKEN не найден. Установите переменную окружения BOT_TOKEN")
         return
 
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # ConversationHandler для записи
     booking_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📝 Записаться$"), handle_main_menu)],
         states={
-            SERVICE: [CallbackQueryHandler(service_selection,
-                                           pattern="^(hairstyle|makeup|womens_haircut|hair_extensions|consultation)$")],
+            SERVICE: [CallbackQueryHandler(service_selection, pattern="^(hairstyle|makeup|womens_haircut|hair_extensions|consultation)$")],
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             CONTACT: [MessageHandler(filters.CONTACT, get_contact)],
             DATE: [CallbackQueryHandler(get_date, pattern="^date_")],
             TIME: [CallbackQueryHandler(get_time, pattern="^time_")],
         },
-        fallbacks=[CommandHandler("cancel", cancel),
-                   CallbackQueryHandler(cancel_booking_menu, pattern="^cancel_booking_menu$")],
+        fallbacks=[CommandHandler("cancel", cancel), CallbackQueryHandler(cancel_booking_menu, pattern="^cancel_booking_menu$")],
         name="booking",
         allow_reentry=True,
         per_message=False,
@@ -557,14 +467,14 @@ def main():
         per_user=True,
     )
 
+    # ConversationHandler для свободных слотов
     slots_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📅 Свободные даты$"), handle_main_menu)],
         states={
             CHOOSING_SLOT_DATE: [CallbackQueryHandler(slot_date, pattern="^date_")],
             CHOOSING_SLOT_TIME: [CallbackQueryHandler(slot_time, pattern="^time_")],
         },
-        fallbacks=[CommandHandler("cancel", cancel),
-                   CallbackQueryHandler(cancel_booking_menu, pattern="^cancel_booking_menu$")],
+        fallbacks=[CommandHandler("cancel", cancel), CallbackQueryHandler(cancel_booking_menu, pattern="^cancel_booking_menu$")],
         name="slots",
         allow_reentry=True,
         per_message=False,
@@ -572,11 +482,11 @@ def main():
         per_user=True,
     )
 
+    # ConversationHandler для отмены записи
     cancel_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^❌ Отменить запись$"), handle_main_menu)],
         states={CHOOSING_CANCEL_BOOKING: [CallbackQueryHandler(confirm_cancel, pattern="^confirm_cancel_")]},
-        fallbacks=[CommandHandler("cancel", cancel),
-                   CallbackQueryHandler(cancel_booking_menu, pattern="^cancel_booking_menu$")],
+        fallbacks=[CommandHandler("cancel", cancel), CallbackQueryHandler(cancel_booking_menu, pattern="^cancel_booking_menu$")],
         name="cancel",
         allow_reentry=True,
         per_message=False,
@@ -584,29 +494,19 @@ def main():
         per_user=True,
     )
 
-
-
-
     # Обработчики
     app.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
     app.add_handler(CallbackQueryHandler(works_navigation, pattern="^works_(next|prev)_"))
-
-    # Специальный обработчик для кнопки администратора (список записей)
     app.add_handler(MessageHandler(filters.Regex("^📋 Список записей$"), get_bookings_list))
-
-    # Обработчик для остальных reply-кнопок (кроме тех, что уже обрабатываются через entry_points)
-    app.add_handler(
-        MessageHandler(filters.Regex("^(💼 Мои работы|💰 Прайс-лист|ℹ️ О нас|📞 Контакты)$"), handle_main_menu))
-
+    app.add_handler(MessageHandler(filters.Regex("^(💼 Мои работы|💰 Прайс-лист|ℹ️ О нас|📞 Контакты)$"), handle_main_menu))
     app.add_handler(CommandHandler("start", start))
 
     app.add_handler(booking_conv)
     app.add_handler(slots_conv)
     app.add_handler(cancel_conv)
 
-    print("✅ Бот запущен. Администратор видит кнопку «📋 Список записей» и она работает.")
+    print("✅ Бот запущен. Администратор видит кнопку «📋 Список записей».")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
