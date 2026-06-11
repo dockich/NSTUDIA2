@@ -144,7 +144,11 @@ def get_works_media(page):
     path = f"works/photo{photo_num}.jpg"
     if not os.path.exists(path):
         path_png = f"works/photo{photo_num}.png"
-        path = path_png if os.path.exists(path_png) else "works/placeholder.jpg"
+        if os.path.exists(path_png):
+            path = path_png
+        else:
+            # Если нет ни jpg, ни png — возвращаем None, а не падаем
+            return None
     captions = [
         "✨ <b>Мои работы</b> – Стильная стрижка",
         "Прическа на выпускной",
@@ -280,14 +284,17 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Выберите услугу:", reply_markup=get_inline_service_keyboard())
         return SERVICE
     elif text == "💼 Мои работы":
-        media = get_works_media(0)
+    media = get_works_media(0)
+    if media is None:
+        await update.message.reply_text("❌ Фотографии временно недоступны. Попробуйте позже.")
+    else:
         await update.message.reply_photo(
             photo=media.media,
             caption=media.caption,
             parse_mode="HTML",
             reply_markup=get_inline_work_pages_keyboard(0)
         )
-        return ConversationHandler.END
+    return ConversationHandler.END
     elif text == "💰 Прайс-лист":
         msg = "📋 <b>Прайс-лист:</b>\n\n💇‍♀️ Прическа — от 2000₽\n💄 Макияж — от 2500₽\n✂️ Женская стрижка — от 500₽\n💁‍♀️ Наращивание волос — от 5000₽\n📋 Консультация — бесплатно"
         await update.message.reply_text(msg, parse_mode="HTML")
